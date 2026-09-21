@@ -1,0 +1,249 @@
+<!-- templates/table_detail.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ database }}.{{ table }} — check_impala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .breadcrumb { font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
+    .breadcrumb a { color: var(--blue-dark); text-decoration: none; font-weight: 700; }
+    .title-row { display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+    .title-row h1 { font-size: 22px; margin: 0; color: var(--ink); font-family: Consolas, monospace; }
+    .title-sub { font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+    .sparkline-card { background: var(--cream-card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px 18px; box-shadow: var(--shadow-soft); margin-bottom: 22px; }
+    .sparkline-card h4 { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .5px; }
+    .col-table td, .col-table th { white-space: nowrap; }
+    .col-table td.wrap { white-space: normal; }
+    .section-title { font-size: 14.5px; font-weight: 800; color: var(--ink); margin: 26px 0 10px; }
+    .empty-note { color: var(--ink-soft); font-size: 12.5px; font-weight: 600; padding: 16px 4px; }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+    <main class="main">
+      <div class="page-container wide">
+
+        <div class="breadcrumb"><a href="/tables">ตารางทั้งหมด</a> / {{ database }}.{{ table }}</div>
+        <div class="title-row">
+          <div>
+            <h1>{{ database }}.{{ table }}</h1>
+            {% if detail %}
+            <div class="title-sub">
+              ตรวจล่าสุด {{ detail.checked_at[:19].replace('T',' ') }}
+              · {{ "scan ข้อมูลจริง" if detail.live_scanned else "metadata/stats เท่านั้น" }}
+              {% if detail.size %} · ขนาด {{ detail.size }}{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div style="display:flex; align-items:center; gap:14px;">
+            {% if detail %}
+            <div class="score-pill {{ detail.status if detail.score is not none else 'na' }}" style="width:56px;height:56px;font-size:16px;">{{ detail.score if detail.score is not none else '—' }}</div>
+            {% endif %}
+            <button class="btn btn-primary" id="btn-recheck">🔄 ตรวจซ้ำตารางนี้</button>
+          </div>
+        </div>
+
+        {% if not detail %}
+        <div class="empty-note" style="text-align:center; padding: 60px;">
+          ยังไม่เคยตรวจตารางนี้ — กด "ตรวจซ้ำตารางนี้" เพื่อเริ่มตรวจครั้งแรก
+        </div>
+        {% else %}
+
+        {% if detail.error %}
+        <div class="stat-error" style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:var(--red); background:var(--red-tint); border-radius:12px; padding:10px 16px; margin-bottom:18px;">
+          ⚠️ {{ detail.error }}
+        </div>
+        {% endif %}
+
+        <div class="check-grid">
+          <div class="check-card">
+            <h4>📐 Completeness</h4>
+            <div class="value">{{ detail.checks.completeness.avg_missing_pct ~ '%' if detail.checks.completeness.avg_missing_pct is not none else '—' }}</div>
+            <div class="note">ค่าว่างเฉลี่ยทุกคอลัมน์ (แหล่งข้อมูล: {{ 'scan จริง' if detail.checks.completeness.source == 'scan' else 'SHOW COLUMN STATS' }})</div>
+          </div>
+          <div class="check-card">
+            <h4>🧬 Uniqueness</h4>
+            {% if detail.checks.uniqueness.checked %}
+            <div class="value">{{ detail.checks.uniqueness.duplicate_row_count }} แถวซ้ำ</div>
+            <div class="note">{{ detail.checks.uniqueness.duplicate_row_pct }}% ของทั้งตาราง</div>
+            {% else %}
+            <div class="value">—</div>
+            <div class="note">{{ detail.checks.uniqueness.skip_reason or 'ยังไม่ได้ตรวจ' }}</div>
+            {% endif %}
+          </div>
+          <div class="check-card">
+            <h4>🕐 Freshness</h4>
+            {% if detail.checks.freshness.status == 'fresh' %}
+            <div class="value">🟢 ล่าสุด {{ detail.checks.freshness.age_days }} วันก่อน</div>
+            <div class="note">คอลัมน์ {{ detail.checks.freshness.column }}</div>
+            {% elif detail.checks.freshness.status == 'stale' %}
+            <div class="value">🔴 เก่าไปแล้ว {{ detail.checks.freshness.age_days }} วัน</div>
+            <div class="note">คอลัมน์ {{ detail.checks.freshness.column }} (เกณฑ์ {{ detail.checks.freshness.threshold_days }} วัน)</div>
+            {% else %}
+            <div class="value">—</div>
+            <div class="note">{{ detail.checks.freshness.note or 'ไม่พบคอลัมน์วันที่/เวลา' }}</div>
+            {% endif %}
+          </div>
+          <div class="check-card">
+            <h4>📦 Volume</h4>
+            <div class="value">{{ "{:,}".format(detail.checks.volume.row_count) if detail.checks.volume.row_count is not none else "—" }} แถว</div>
+            <div class="note">
+              {% if detail.checks.volume.change_pct is not none %}
+                เทียบครั้งก่อน {{ '+' if detail.checks.volume.change_pct >= 0 else '' }}{{ detail.checks.volume.change_pct }}%
+                ({{ "{:,}".format(detail.checks.volume.previous_row_count) }} แถว)
+              {% else %}
+                ยังไม่มีข้อมูลครั้งก่อนเทียบ
+              {% endif %}
+            </div>
+          </div>
+          <div class="check-card">
+            <h4>🧩 Schema Drift</h4>
+            <div class="value">
+              {% if detail.checks.schema.status == 'unchanged' %}ไม่เปลี่ยนแปลง
+              {% elif detail.checks.schema.status == 'new' %}ตรวจครั้งแรก
+              {% else %}เปลี่ยนแปลง{% endif %}
+            </div>
+            <div class="note">
+              {% if detail.checks.schema.added %}เพิ่ม: {{ detail.checks.schema.added | join(', ') }}<br>{% endif %}
+              {% if detail.checks.schema.removed %}ลบ: {{ detail.checks.schema.removed | join(', ') }}<br>{% endif %}
+              {% if detail.checks.schema.type_changed %}เปลี่ยนชนิด: {% for tc in detail.checks.schema.type_changed %}{{ tc.column }} ({{ tc.from }}→{{ tc.to }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+              {% if detail.checks.schema.status == 'unchanged' %}คอลัมน์/ชนิดข้อมูลเหมือนครั้งก่อน{% endif %}
+            </div>
+          </div>
+          <div class="check-card">
+            <h4>🛡️ Governance</h4>
+            <div class="value">{{ '✅ มี stats' if detail.checks.governance.stats_computed else '⚠️ ไม่มี stats' }}</div>
+            <div class="note">{{ detail.checks.governance.note or 'เคยรัน COMPUTE STATS แล้ว' }}</div>
+          </div>
+        </div>
+
+        {% if history and history|length > 1 %}
+        <div class="sparkline-card">
+          <h4>คะแนนย้อนหลัง ({{ history|length }} ครั้งล่าสุด)</h4>
+          <div id="sparkline"></div>
+        </div>
+        {% endif %}
+
+        {% if detail.checks.uniqueness.key_candidates %}
+        <div class="section-title">คอลัมน์ที่ค่าไม่ซ้ำกันเลย (key candidate)</div>
+        <div>
+          {% for k in detail.checks.uniqueness.key_candidates %}<span class="tag-pill">{{ k }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="section-title">รายละเอียดคอลัมน์ ({{ detail.columns|length }})</div>
+        <div style="overflow-x:auto;">
+        <table class="dq-table col-table">
+          <thead>
+            <tr>
+              <th>คอลัมน์</th><th>ชนิด</th><th>Missing %</th><th>Null</th><th>ค่าว่าง (blank)</th><th>Distinct (ประมาณ)</th><th>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in detail.columns %}
+            <tr>
+              <td class="mono">{{ c.name }}</td>
+              <td class="mono muted">{{ c.type }}</td>
+              <td>
+                {% if c.missing_pct is not none %}
+                <span class="missing-bar-track"><span class="missing-bar-fill" style="width:{{ c.missing_pct if c.missing_pct <= 100 else 100 }}%;"></span></span>
+                {{ c.missing_pct }}%
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ "{:,}".format(c.null_count) if c.null_count is not none else "—" }}</td>
+              <td>{{ "{:,}".format(c.blank_count) if c.blank_count is not none else "—" }}</td>
+              <td>{{ "{:,}".format(c.distinct_count) if c.distinct_count is not none else "—" }}</td>
+              <td class="wrap">
+                {% if c.is_key_candidate %}<span class="tag-pill">🔑 unique</span>{% endif %}
+                {% if c.is_constant %}<span class="tag-pill">⚠️ ค่าเดียวทั้งคอลัมน์</span>{% endif %}
+                {% if c.source == 'unavailable' %}<span class="tag-pill">ไม่มีข้อมูล</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% endif %}
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const history = {{ (history or []) | tojson }};
+    const database = {{ database | tojson }};
+    const table = {{ table | tojson }};
+
+    // ── sparkline คะแนนย้อนหลัง: SVG บาง ๆ เส้นเดียว จุดสีตามสถานะ (เขียว/เหลือง/แดง/ม่วง) ──
+    (function drawSparkline() {
+      const el = document.getElementById('sparkline');
+      if (!el || history.length < 2) return;
+      const w = 640, h = 60, pad = 10;
+      const scores = history.map(p => p.score === null || p.score === undefined ? 0 : p.score);
+      const min = 0, max = 100;
+      const stepX = (w - pad * 2) / (history.length - 1);
+      const colorOf = s => ({ ok: '#2FB670', warn: '#B8860B', fail: '#E5484D', error: '#5B4FCF' }[s] || '#9FB4C6');
+
+      const pts = history.map((p, i) => {
+        const x = pad + i * stepX;
+        const y = h - pad - ((p.score ?? 0) - min) / (max - min) * (h - pad * 2);
+        return { x, y, p };
+      });
+      const path = pts.map((pt, i) => (i === 0 ? 'M' : 'L') + pt.x.toFixed(1) + ',' + pt.y.toFixed(1)).join(' ');
+
+      let svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="overflow:visible;">`;
+      svg += `<line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#D7ECFB" stroke-width="1"/>`;
+      svg += `<path d="${path}" fill="none" stroke="#0D6EFD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+      pts.forEach(pt => {
+        svg += `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="4" fill="${colorOf(pt.p.status)}"><title>${pt.p.checked_at.slice(0,19).replace('T',' ')} — score ${pt.p.score}</title></circle>`;
+      });
+      svg += `</svg>`;
+      el.innerHTML = svg;
+    })();
+
+    document.getElementById('btn-recheck').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ กำลังตรวจ...';
+      try {
+        const res = await fetch(`/api/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/recheck`, { method: 'POST' });
+        if (res.status === 202) {
+          const data = await res.json();
+          pollUntilDone(data.run_id);
+        } else {
+          const err = await res.json();
+          alert(err.detail || 'ตรวจไม่สำเร็จ');
+          btn.disabled = false;
+          btn.textContent = '🔄 ตรวจซ้ำตารางนี้';
+        }
+      } catch (err) {
+        alert('ตรวจไม่สำเร็จ: ' + err);
+        btn.disabled = false;
+        btn.textContent = '🔄 ตรวจซ้ำตารางนี้';
+      }
+    });
+
+    async function pollUntilDone(runId) {
+      try {
+        const res = await fetch(`/api/scan/${runId}/status?log_tail=1`);
+        const run = await res.json();
+        if (run.status === 'running') {
+          setTimeout(() => pollUntilDone(runId), 1500);
+        } else {
+          location.reload();
+        }
+      } catch (e) {
+        setTimeout(() => pollUntilDone(runId), 2000);
+      }
+    }
+  </script>
+</body>
+</html>

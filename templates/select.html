@@ -1,0 +1,319 @@
+<!-- templates/select.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>เลือก Database/ตาราง — check_impala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .picker-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
+    @media (max-width: 860px) { .picker-grid { grid-template-columns: 1fr; } }
+
+    .picker-card, .cart-card {
+      background: var(--cream-card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      padding: 20px 22px; box-shadow: var(--shadow-soft);
+    }
+    .picker-card h2, .cart-card h2 { font-size: 15px; font-weight: 800; margin: 0 0 14px; color: var(--ink); }
+
+    .picker-controls { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .picker-controls select, .picker-controls input { flex: 1; min-width: 160px; }
+
+    .select-all-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; padding: 0 2px; }
+
+    .table-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; }
+    .table-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+    .table-row:last-child { border-bottom: none; }
+    .table-row:hover { background: var(--blue-tint); }
+    .table-row label { flex: 1; cursor: pointer; font-family: Consolas, monospace; }
+    .table-row input { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+
+    .picker-placeholder { padding: 40px 10px; text-align: center; color: var(--ink-soft); font-size: 12.5px; font-weight: 600; }
+
+    .cart-list { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; margin-bottom: 14px; }
+    .cart-group { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    .cart-group .cart-db { font-size: 11.5px; font-weight: 800; color: var(--blue-dark); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+    .cart-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--blue-tint); color: var(--ink); font-size: 11.5px; font-weight: 700; font-family: Consolas, monospace; padding: 4px 6px 4px 10px; border-radius: 999px; margin: 3px 4px 0 0; }
+    .cart-chip button { border: none; background: none; cursor: pointer; color: var(--ink-soft); font-size: 13px; line-height: 1; padding: 2px; }
+    .cart-chip button:hover { color: var(--red); }
+    .cart-empty { color: var(--ink-soft); font-size: 12.5px; font-weight: 600; padding: 20px 4px; text-align: center; }
+
+    .cart-footer { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .cart-count { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+    #btn-start { width: 100%; padding: 13px; font-size: 13.5px; }
+
+    .log-box { margin-top: 14px; }
+    .scan-progress { background: var(--cream); border-radius: 999px; height: 10px; overflow: hidden; margin-top: 10px; }
+    .scan-progress-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--blue-dark)); transition: width .3s ease; }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+    <main class="main">
+      <div class="page-container wide">
+        <div class="header-block" style="margin-bottom:18px;">
+          <h1 style="font-size:22px; margin:0 0 4px; color:var(--ink);">เลือก Database / ตาราง</h1>
+          <p class="subtitle" style="margin:0;">เลือกเฉพาะฐานข้อมูลและตารางที่ต้องการตรวจ แทนการสแกนทั้ง cluster</p>
+        </div>
+
+        {% if error %}
+        <div style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:var(--red); background:var(--red-tint); border-radius:12px; padding:10px 16px; margin-bottom:18px;">
+          ⚠️ เชื่อมต่อ Impala ไม่สำเร็จ: {{ error }}
+        </div>
+        {% endif %}
+
+        {% if running_run_id %}
+        <div style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:#2563EB; background:var(--sky-tint); border-radius:12px; padding:10px 16px; margin-bottom:18px;">
+          ⏳ มีการสแกนกำลังทำงานอยู่ — <a href="/history/{{ running_run_id }}" style="color:#2563EB;">ดูความคืบหน้า</a>
+        </div>
+        {% endif %}
+
+        <div class="picker-grid">
+          <div class="picker-card">
+            <h2>1. เลือกฐานข้อมูล แล้วติ๊กตารางที่ต้องการ</h2>
+            <div class="picker-controls">
+              <select id="db-select">
+                <option value="">— เลือก database —</option>
+                {% for db in databases %}
+                <option value="{{ db }}">{{ db }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" id="table-search" placeholder="ค้นหาชื่อตาราง..." disabled>
+            </div>
+            <div class="select-all-row">
+              <input type="checkbox" id="select-all" disabled>
+              <label for="select-all">เลือกทั้งหมดที่แสดงอยู่</label>
+              <span id="table-count-label" style="margin-left:auto;"></span>
+            </div>
+            <div class="table-list" id="table-list">
+              <div class="picker-placeholder">เลือก database ด้านบนเพื่อแสดงรายชื่อตาราง</div>
+            </div>
+          </div>
+
+          <div class="cart-card">
+            <h2>2. รายการที่เลือกไว้</h2>
+            <div class="cart-list" id="cart-list">
+              <div class="cart-empty">ยังไม่ได้เลือกตารางใด</div>
+            </div>
+            <div class="cart-footer">
+              <div class="cart-count"><span id="cart-count">0</span> ตารางที่เลือก · <a href="#" id="btn-clear-cart" style="font-weight:700;">ล้างทั้งหมด</a></div>
+              <button class="btn btn-primary" id="btn-start" disabled>▶️ เริ่มตรวจตารางที่เลือก</button>
+            </div>
+
+            <div id="scan-block" style="display:none;">
+              <div class="scan-progress"><div class="scan-progress-fill" id="scan-progress-fill" style="width:0%;"></div></div>
+              <div style="font-size:12px; font-weight:700; margin-top:8px; display:flex; justify-content:space-between;">
+                <span id="scan-position">กำลังเริ่ม...</span>
+                <span id="scan-count">0 / 0</span>
+              </div>
+              <div class="log-box" id="scan-log" style="max-height:180px;"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // cart: Map key "db::table" -> {database, table}
+    const cart = new Map();
+    const tableCache = new Map(); // database -> [tables]
+
+    const dbSelect = document.getElementById('db-select');
+    const tableSearch = document.getElementById('table-search');
+    const selectAll = document.getElementById('select-all');
+    const tableList = document.getElementById('table-list');
+    const tableCountLabel = document.getElementById('table-count-label');
+    const cartList = document.getElementById('cart-list');
+    const cartCount = document.getElementById('cart-count');
+    const btnStart = document.getElementById('btn-start');
+
+    function cartKey(db, tbl) { return db + '::' + tbl; }
+
+    function renderCart() {
+      cartCount.textContent = cart.size;
+      btnStart.disabled = cart.size === 0;
+      if (cart.size === 0) {
+        cartList.innerHTML = '<div class="cart-empty">ยังไม่ได้เลือกตารางใด</div>';
+        return;
+      }
+      const byDb = new Map();
+      for (const { database, table } of cart.values()) {
+        if (!byDb.has(database)) byDb.set(database, []);
+        byDb.get(database).push(table);
+      }
+      let html = '';
+      for (const [db, tables] of [...byDb.entries()].sort()) {
+        html += `<div class="cart-group"><div class="cart-db">${db} (${tables.length})</div>`;
+        for (const t of tables.sort()) {
+          html += `<span class="cart-chip">${t}<button data-db="${db}" data-tbl="${t}" title="เอาออก">✕</button></span>`;
+        }
+        html += `</div>`;
+      }
+      cartList.innerHTML = html;
+      cartList.querySelectorAll('button[data-db]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = cartKey(btn.dataset.db, btn.dataset.tbl);
+          cart.delete(key);
+          renderCart();
+          syncCheckboxes();
+        });
+      });
+    }
+
+    function syncCheckboxes() {
+      tableList.querySelectorAll('input[type=checkbox][data-tbl]').forEach(cb => {
+        cb.checked = cart.has(cartKey(dbSelect.value, cb.dataset.tbl));
+      });
+      updateSelectAllState();
+    }
+
+    function updateSelectAllState() {
+      const boxes = [...tableList.querySelectorAll('input[type=checkbox][data-tbl]')].filter(cb => cb.closest('.table-row').style.display !== 'none');
+      selectAll.checked = boxes.length > 0 && boxes.every(cb => cb.checked);
+    }
+
+    function renderTableList(tables) {
+      if (tables.length === 0) {
+        tableList.innerHTML = '<div class="picker-placeholder">database นี้ไม่มีตาราง</div>';
+        tableCountLabel.textContent = '';
+        return;
+      }
+      tableList.innerHTML = tables.map(t => `
+        <div class="table-row">
+          <input type="checkbox" id="cb-${t}" data-tbl="${t}">
+          <label for="cb-${t}">${t}</label>
+        </div>`).join('');
+      tableList.querySelectorAll('input[type=checkbox][data-tbl]').forEach(cb => {
+        cb.checked = cart.has(cartKey(dbSelect.value, cb.dataset.tbl));
+        cb.addEventListener('change', () => {
+          const key = cartKey(dbSelect.value, cb.dataset.tbl);
+          if (cb.checked) cart.set(key, { database: dbSelect.value, table: cb.dataset.tbl });
+          else cart.delete(key);
+          renderCart();
+          updateSelectAllState();
+        });
+      });
+      tableCountLabel.textContent = `${tables.length} ตาราง`;
+      updateSelectAllState();
+    }
+
+    async function loadTables(db) {
+      tableList.innerHTML = '<div class="picker-placeholder">กำลังโหลดรายชื่อตาราง...</div>';
+      tableSearch.value = '';
+      tableSearch.disabled = true;
+      selectAll.disabled = true;
+      try {
+        if (!tableCache.has(db)) {
+          const res = await fetch(`/api/impala/tables/${encodeURIComponent(db)}`);
+          if (!res.ok) throw new Error((await res.json()).detail || 'โหลดไม่สำเร็จ');
+          const data = await res.json();
+          tableCache.set(db, data.tables);
+        }
+        renderTableList(tableCache.get(db));
+        tableSearch.disabled = false;
+        selectAll.disabled = false;
+      } catch (e) {
+        tableList.innerHTML = `<div class="picker-placeholder">⚠️ โหลดตารางไม่สำเร็จ: ${e}</div>`;
+      }
+    }
+
+    dbSelect.addEventListener('change', () => {
+      if (dbSelect.value) loadTables(dbSelect.value);
+      else {
+        tableList.innerHTML = '<div class="picker-placeholder">เลือก database ด้านบนเพื่อแสดงรายชื่อตาราง</div>';
+        tableSearch.disabled = true;
+        selectAll.disabled = true;
+        tableCountLabel.textContent = '';
+      }
+    });
+
+    tableSearch.addEventListener('input', () => {
+      const q = tableSearch.value.trim().toLowerCase();
+      tableList.querySelectorAll('.table-row').forEach(row => {
+        const name = row.querySelector('input').dataset.tbl.toLowerCase();
+        row.style.display = name.includes(q) ? '' : 'none';
+      });
+      updateSelectAllState();
+    });
+
+    selectAll.addEventListener('change', () => {
+      tableList.querySelectorAll('.table-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const cb = row.querySelector('input');
+        cb.checked = selectAll.checked;
+        const key = cartKey(dbSelect.value, cb.dataset.tbl);
+        if (selectAll.checked) cart.set(key, { database: dbSelect.value, table: cb.dataset.tbl });
+        else cart.delete(key);
+      });
+      renderCart();
+    });
+
+    document.getElementById('btn-clear-cart').addEventListener('click', (e) => {
+      e.preventDefault();
+      cart.clear();
+      renderCart();
+      syncCheckboxes();
+    });
+
+    function renderLog(lines) {
+      const box = document.getElementById('scan-log');
+      box.innerHTML = lines.map(l => `<div class="line">${l.replace(/</g,'&lt;')}</div>`).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function pollStatus(runId) {
+      try {
+        const res = await fetch(`/api/scan/${runId}/status?log_tail=40`);
+        const run = await res.json();
+        const total = run.total_tables || 0, done = run.done_tables || 0;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
+        document.getElementById('scan-progress-fill').style.width = pct + '%';
+        document.getElementById('scan-count').textContent = `${done} / ${total}`;
+        document.getElementById('scan-position').textContent = run.current_database
+          ? `กำลังตรวจ: ${run.current_database}.${run.current_table || ''}` : 'กำลังเริ่ม...';
+        renderLog(run.log_lines || []);
+        if (run.status !== 'running') {
+          setTimeout(() => { window.location.href = `/history/${runId}`; }, 1200);
+          return;
+        }
+      } catch (e) { /* retry next tick */ }
+      setTimeout(() => pollStatus(runId), 2000);
+    }
+
+    btnStart.addEventListener('click', async () => {
+      if (cart.size === 0) return;
+      btnStart.disabled = true;
+      btnStart.textContent = '⏳ กำลังเริ่มตรวจ...';
+      document.getElementById('scan-block').style.display = 'block';
+      try {
+        const res = await fetch('/api/scan/start/selection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targets: [...cart.values()] }),
+        });
+        if (res.status === 202) {
+          const data = await res.json();
+          pollStatus(data.run_id);
+        } else {
+          const err = await res.json();
+          alert(err.detail || 'เริ่มตรวจไม่สำเร็จ');
+          btnStart.disabled = false;
+          btnStart.textContent = '▶️ เริ่มตรวจตารางที่เลือก';
+        }
+      } catch (e) {
+        alert('เริ่มตรวจไม่สำเร็จ: ' + e);
+        btnStart.disabled = false;
+        btnStart.textContent = '▶️ เริ่มตรวจตารางที่เลือก';
+      }
+    });
+  </script>
+</body>
+</html>

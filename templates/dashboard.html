@@ -1,0 +1,284 @@
+<!-- templates/dashboard.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>check_impala — Data Quality Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .welcome-banner { margin-bottom: 20px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .welcome-banner h1 { font-size: 24px; margin: 0 0 4px; color: var(--ink); font-weight: 800; }
+    .welcome-banner p { margin: 0; color: var(--ink-soft); font-size: 13.5px; font-weight: 500; }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
+    .stat-card { background-color: var(--cream-card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px 18px; box-shadow: var(--shadow-soft); }
+    .stat-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; margin-bottom: 10px; }
+    .stat-value { font-size: 22px; font-weight: 800; color: var(--ink); line-height: 1.2; }
+    .stat-value.sm { font-size: 14px; }
+    .stat-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 700; margin-top: 2px; }
+
+    .scan-panel { background-color: var(--cream-card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 22px 26px; box-shadow: var(--shadow-soft); margin-bottom: 22px; }
+    .scan-panel-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+    .scan-panel h2 { font-size: 16px; font-weight: 800; margin: 0; color: var(--ink); }
+    .scan-meta { font-size: 12px; color: var(--ink-soft); font-weight: 600; margin-top: 4px; }
+    .scan-progress-wrap { margin: 14px 0 8px; }
+    .scan-progress-label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 12px; }
+    .section-head h2 { font-size: 16px; font-weight: 800; color: var(--ink); margin: 0; }
+    .section-head a { font-size: 12.5px; font-weight: 700; color: var(--blue-dark); text-decoration: none; }
+    .section-head a:hover { text-decoration: underline; }
+
+    .side-panel { margin-bottom: 18px; }
+    .side-panel h3 { font-size: 13px; font-weight: 800; color: var(--ink); margin: 0 0 10px; }
+    .conn-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .conn-row .conn-info { font-size: 12.5px; font-weight: 700; color: var(--ink); font-family: Consolas, monospace; }
+    .conn-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800; padding: 5px 12px; border-radius: 999px; background: var(--blue-tint); color: var(--ink-soft); flex-shrink: 0; }
+    .conn-status .dot { width: 7px; height: 7px; border-radius: 50%; background: #9FB4C6; }
+    .conn-status.ok { background: var(--green-tint); color: #1e8a54; }
+    .conn-status.ok .dot { background: var(--green); }
+    .conn-status.fail { background: var(--red-tint); color: var(--red); }
+    .conn-status.fail .dot { background: var(--red); }
+
+    .lower-grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; align-items: start; }
+    @media (max-width: 760px) { .lower-grid { grid-template-columns: 1fr; } }
+    .empty-note { color: var(--ink-soft); font-size: 12.5px; font-weight: 600; padding: 16px 4px; }
+    footer.app-footer { text-align: center; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; margin-top: 28px; padding-top: 16px; }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+
+    <main class="main">
+      <div class="page-container wide">
+
+        <div class="welcome-banner">
+          <div>
+            <h1>ภาพรวมคุณภาพข้อมูล 📊</h1>
+            <p>ตรวจคุณภาพตารางทั้งหมดใน Impala อัตโนมัติ — completeness, uniqueness, freshness, volume, schema drift</p>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background: var(--blue-tint);">🗂️</div>
+            <div class="stat-value">{{ "{:,}".format(summary.total_tables) }}</div>
+            <div class="stat-label">ตารางที่ตรวจแล้ว</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: var(--green-tint);">✅</div>
+            <div class="stat-value">{{ "{:,}".format(summary.ok_count) }}</div>
+            <div class="stat-label">ผ่าน</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: #FFF4DA;">⚠️</div>
+            <div class="stat-value">{{ "{:,}".format(summary.warn_count) }}</div>
+            <div class="stat-label">ควรตรวจสอบ</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: var(--red-tint);">❌</div>
+            <div class="stat-value">{{ "{:,}".format(summary.fail_count + summary.error_count) }}</div>
+            <div class="stat-label">มีปัญหา / ตรวจไม่สำเร็จ</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: var(--teal-tint);">🎯</div>
+            <div class="stat-value">{{ summary.avg_score if summary.avg_score is not none else "—" }}</div>
+            <div class="stat-label">คะแนนเฉลี่ย</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: var(--navy-tint);">🗄️</div>
+            <div class="stat-value">{{ "{:,}".format(summary.database_count) }}</div>
+            <div class="stat-label">ฐานข้อมูลที่พบ</div>
+          </div>
+        </div>
+
+        <div class="scan-panel">
+          <div class="scan-panel-top">
+            <div>
+              <h2>สแกนตรวจคุณภาพ</h2>
+              <div class="scan-meta" id="scan-idle-meta">ดึงรายชื่อฐานข้อมูล/ตารางทั้งหมดจาก Impala อัตโนมัติ แล้วตรวจทีละตาราง</div>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn btn-secondary" id="btn-refresh-page" onclick="location.reload()">🔄 รีเฟรช</button>
+              <button class="btn btn-primary" id="btn-start-scan">▶️ สแกนทั้งหมดตอนนี้</button>
+            </div>
+          </div>
+
+          <div id="scan-running-block" style="display:none;">
+            <div class="scan-progress-wrap">
+              <div class="scan-progress-label">
+                <span id="scan-position">กำลังเริ่ม...</span>
+                <span id="scan-count">0 / 0</span>
+              </div>
+              <div class="scan-progress"><div class="scan-progress-fill" id="scan-progress-fill" style="width:0%;"></div></div>
+            </div>
+            <div style="display:flex; gap:16px; margin: 10px 0 14px; font-size: 12px; font-weight: 700;">
+              <span>✅ <span id="cnt-ok">0</span></span>
+              <span>⚠️ <span id="cnt-warn">0</span></span>
+              <span>❌ <span id="cnt-fail">0</span></span>
+              <span>🛑 <span id="cnt-error">0</span></span>
+            </div>
+            <div class="log-box" id="scan-log"></div>
+            <div style="margin-top: 12px;">
+              <button class="btn btn-danger" id="btn-cancel-scan">⏹ ยกเลิกการสแกน</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="lower-grid">
+          <div>
+            <div class="section-head">
+              <h2>การสแกนล่าสุด</h2>
+              <a href="/history">ดูทั้งหมด →</a>
+            </div>
+            {% if recent_runs %}
+            <table class="dq-table">
+              <thead><tr><th>โหมด</th><th>เป้าหมาย</th><th>เริ่มเมื่อ</th><th>ผลตรวจ</th><th>สถานะ</th></tr></thead>
+              <tbody>
+                {% for run in recent_runs %}
+                <tr>
+                  <td><a class="row-link" href="/history/{{ run.id }}">{{ {"full":"ทั้งหมด","database":"ฐานข้อมูล","table":"ตารางเดียว","selection":"เลือกเอง"}.get(run.mode, run.mode) }}</a></td>
+                  <td><a class="row-link" href="/history/{{ run.id }}">{{ run.target or "—" }}</a></td>
+                  <td><a class="row-link" href="/history/{{ run.id }}">{{ run.started_at[:19].replace('T',' ') if run.started_at else '—' }}</a></td>
+                  <td>{{ run.done_tables }}/{{ run.total_tables }} (✅{{ run.ok_count }} ⚠️{{ run.warn_count }} ❌{{ run.fail_count }} 🛑{{ run.error_count }})</td>
+                  <td><span class="badge {{ run.status }}">{{ run.status_label }}</span></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="empty-note">ยังไม่มีการสแกนตั้งแต่เปิดเซิร์ฟเวอร์ล่าสุด กด "สแกนทั้งหมดตอนนี้" เพื่อเริ่ม</div>
+            {% endif %}
+          </div>
+
+          <div>
+            <div class="side-panel">
+              <h3>การเชื่อมต่อ Impala</h3>
+              <div class="conn-row">
+                <div>
+                  <div class="conn-info">{{ impala_host }}:{{ impala_port }}</div>
+                </div>
+                <span class="conn-status" id="conn-status"><span class="dot"></span><span class="text">กำลังตรวจสอบ...</span></span>
+              </div>
+            </div>
+            <div class="side-panel">
+              <h3>ไม่มี Stats</h3>
+              <div class="empty-note" style="padding:0;">
+                {{ summary.no_stats_count }} ตารางยังไม่เคยรัน <code>COMPUTE STATS</code> — เช็ค completeness/uniqueness ของตารางเหล่านี้อาจไม่ครบ
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="app-footer">© 2026 Metropolitan Waterworks Authority. All rights reserved.</footer>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const runningRunId = {{ (running_run_id | tojson) if running_run_id else 'null' }};
+    let pollTimer = null;
+
+    function fmtDuration(ms) { return ms; }
+
+    async function checkImpalaConnection() {
+      const el = document.getElementById('conn-status');
+      try {
+        const res = await fetch('/api/impala/ping');
+        const data = await res.json();
+        el.className = 'conn-status ' + (data.ok ? 'ok' : 'fail');
+        el.querySelector('.text').textContent = data.ok ? 'เชื่อมต่อได้' : 'เชื่อมต่อไม่ได้';
+        if (!data.ok && data.detail) el.title = data.detail;
+      } catch (e) {
+        el.className = 'conn-status fail';
+        el.querySelector('.text').textContent = 'ตรวจสอบไม่สำเร็จ';
+      }
+    }
+    checkImpalaConnection();
+
+    function renderLog(lines) {
+      const box = document.getElementById('scan-log');
+      box.innerHTML = lines.map(l => `<div class="line">${l.replace(/</g,'&lt;')}</div>`).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function showRunningBlock(show) {
+      document.getElementById('scan-running-block').style.display = show ? 'block' : 'none';
+      document.getElementById('btn-start-scan').disabled = show;
+      document.getElementById('scan-idle-meta').style.display = show ? 'none' : 'block';
+    }
+
+    async function pollStatus(runId) {
+      try {
+        const res = await fetch(`/api/scan/${runId}/status?log_tail=40`);
+        if (!res.ok) { stopPolling(); return; }
+        const run = await res.json();
+        showRunningBlock(true);
+        const total = run.total_tables || 0;
+        const done = run.done_tables || 0;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
+        document.getElementById('scan-progress-fill').style.width = pct + '%';
+        document.getElementById('scan-count').textContent = `${done} / ${total} (${pct}%)`;
+        document.getElementById('scan-position').textContent = run.current_database
+          ? `กำลังตรวจ: ${run.current_database}.${run.current_table || ''}`
+          : (run.status === 'running' ? 'กำลังค้นหาตาราง...' : (run.status_label || run.status));
+        document.getElementById('cnt-ok').textContent = run.ok_count || 0;
+        document.getElementById('cnt-warn').textContent = run.warn_count || 0;
+        document.getElementById('cnt-fail').textContent = run.fail_count || 0;
+        document.getElementById('cnt-error').textContent = run.error_count || 0;
+        renderLog(run.log_lines || []);
+
+        if (run.status !== 'running') {
+          stopPolling();
+          setTimeout(() => location.reload(), 1200);
+        }
+      } catch (e) {
+        // เงียบไว้ รอบถัดไปค่อยลองใหม่
+      }
+    }
+
+    function startPolling(runId) {
+      window.__currentRunId = runId;
+      showRunningBlock(true);
+      pollStatus(runId);
+      pollTimer = setInterval(() => pollStatus(runId), 2000);
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    document.getElementById('btn-start-scan').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/scan/start?mode=full', { method: 'POST' });
+        if (res.status === 202) {
+          const data = await res.json();
+          startPolling(data.run_id);
+        } else {
+          const err = await res.json();
+          alert(err.detail || 'เริ่มสแกนไม่สำเร็จ');
+        }
+      } catch (e) {
+        alert('เริ่มสแกนไม่สำเร็จ: ' + e);
+      }
+    });
+
+    document.getElementById('btn-cancel-scan').addEventListener('click', async () => {
+      const id = window.__currentRunId || runningRunId;
+      if (!id) return;
+      await fetch(`/api/scan/${id}/cancel`, { method: 'POST' });
+    });
+
+    if (runningRunId) {
+      window.__currentRunId = runningRunId;
+      startPolling(runningRunId);
+    }
+  </script>
+</body>
+</html>

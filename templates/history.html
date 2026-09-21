@@ -1,0 +1,53 @@
+<!-- templates/history.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ประวัติการสแกน — check_impala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .row-sub { font-size: 11px; color: var(--ink-soft); }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+    <main class="main">
+      <div class="page-container wide">
+        <h1 style="font-size:22px; margin:0 0 16px; color:var(--ink);">ประวัติการสแกน</h1>
+
+        {% if runs %}
+        <div style="overflow-x:auto;">
+        <table class="dq-table">
+          <thead>
+            <tr><th>โหมด</th><th>เป้าหมาย</th><th>เริ่มเมื่อ</th><th>เสร็จเมื่อ</th><th>ความคืบหน้า</th><th>ผลตรวจ</th><th>สถานะ</th></tr>
+          </thead>
+          <tbody>
+            {% for run in runs %}
+            <tr>
+              <td><a class="row-link" href="/history/{{ run.id }}">{{ {"full":"ทั้งหมด","database":"ฐานข้อมูล","table":"ตารางเดียว","selection":"เลือกเอง"}.get(run.mode, run.mode) }}</a></td>
+              <td><a class="row-link" href="/history/{{ run.id }}">{{ run.target or "—" }}</a></td>
+              <td>{{ run.started_at[:19].replace('T',' ') if run.started_at else '—' }}</td>
+              <td>{{ run.finished_at[:19].replace('T',' ') if run.finished_at else '—' }}</td>
+              <td>{{ run.done_tables }}/{{ run.total_tables }}</td>
+              <td>✅{{ run.ok_count }} ⚠️{{ run.warn_count }} ❌{{ run.fail_count }} 🛑{{ run.error_count }}</td>
+              <td><span class="badge {{ run.status }}">{{ run.status_label }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty-note">ยังไม่มีการสแกนตั้งแต่เปิดเซิร์ฟเวอร์ล่าสุด</div>
+        {% endif %}
+      </div>
+    </main>
+  </div>
+</body>
+</html>

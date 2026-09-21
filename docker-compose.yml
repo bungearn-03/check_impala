@@ -1,0 +1,13 @@
+services:
+  check_impala:
+    build: .
+    image: check_impala:latest
+    container_name: check_impala
+    restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8020"]
+    ports:
+      - "8020:8020"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,121 @@
+<!-- templates/tables.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ตารางทั้งหมด — check_impala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .header-block h1 { font-size: 22px; margin: 0 0 4px; }
+    .top-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .row-main { display: flex; align-items: center; gap: 10px; }
+    .row-sub { font-size: 11px; color: var(--ink-soft); }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+    <main class="main">
+      <div class="page-container wide">
+        <div class="top-row">
+          <div>
+            <h1 style="font-size:22px; margin:0 0 4px; color:var(--ink);">ตารางทั้งหมด</h1>
+            <div class="muted" style="font-size:12.5px;">พบทั้งหมด {{ "{:,}".format(total) }} ตาราง (จากการสแกนล่าสุดของแต่ละตาราง)</div>
+          </div>
+          <button class="btn btn-primary" id="btn-scan-db" {% if not database %}style="display:none;"{% endif %}>
+            ▶️ สแกน database "{{ database }}" ใหม่
+          </button>
+        </div>
+
+        <form class="filter-bar" method="get" action="/tables">
+          <input type="text" name="q" placeholder="ค้นหา database.table" value="{{ q }}">
+          <select name="status">
+            <option value="" {{ 'selected' if status == '' else '' }}>ทุกสถานะ</option>
+            <option value="ok" {{ 'selected' if status == 'ok' else '' }}>✅ ผ่าน</option>
+            <option value="warn" {{ 'selected' if status == 'warn' else '' }}>⚠️ ควรตรวจสอบ</option>
+            <option value="fail" {{ 'selected' if status == 'fail' else '' }}>❌ มีปัญหา</option>
+            <option value="error" {{ 'selected' if status == 'error' else '' }}>🛑 ตรวจไม่สำเร็จ</option>
+          </select>
+          <select name="database">
+            <option value="">ทุกฐานข้อมูล</option>
+            {% for db in databases %}
+            <option value="{{ db }}" {{ 'selected' if database == db else '' }}>{{ db }}</option>
+            {% endfor %}
+          </select>
+          <select name="sort">
+            <option value="score_asc" {{ 'selected' if sort == 'score_asc' else '' }}>คะแนนต่ำสุดก่อน</option>
+            <option value="score_desc" {{ 'selected' if sort == 'score_desc' else '' }}>คะแนนสูงสุดก่อน</option>
+            <option value="row_count_desc" {{ 'selected' if sort == 'row_count_desc' else '' }}>แถวเยอะสุดก่อน</option>
+            <option value="checked_at_desc" {{ 'selected' if sort == 'checked_at_desc' else '' }}>ตรวจล่าสุดก่อน</option>
+            <option value="name" {{ 'selected' if sort == 'name' else '' }}>ชื่อ A-Z</option>
+          </select>
+          <button class="btn btn-primary" type="submit">กรอง</button>
+          {% if status or database or q or sort != 'score_asc' %}
+          <a class="btn btn-secondary" href="/tables" style="text-decoration:none; display:inline-flex; align-items:center;">ล้างตัวกรอง</a>
+          {% endif %}
+        </form>
+
+        {% if rows %}
+        <div style="overflow-x:auto;">
+        <table class="dq-table">
+          <thead>
+            <tr>
+              <th>คะแนน</th><th>ตาราง</th><th>สถานะ</th><th>จำนวนแถว</th><th>คอลัมน์</th><th>ตรวจล่าสุด</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><div class="score-pill {{ r.status if r.score is not none else 'na' }}">{{ r.score if r.score is not none else '—' }}</div></td>
+              <td>
+                <a class="row-link" href="/tables/{{ r.database_name }}/{{ r.table_name }}">
+                  <div class="row-main mono" style="font-weight:700;">{{ r.table_name }}</div>
+                  <div class="row-sub">{{ r.database_name }}</div>
+                </a>
+              </td>
+              <td><span class="badge {{ r.status }}">{{ {"ok":"✅ ผ่าน","warn":"⚠️ ควรตรวจสอบ","fail":"❌ มีปัญหา","error":"🛑 ตรวจไม่สำเร็จ"}.get(r.status, r.status) }}</span></td>
+              <td>{{ "{:,}".format(r.row_count) if r.row_count is not none else "—" }}</td>
+              <td>{{ r.column_count if r.column_count is not none else "—" }}</td>
+              <td>{{ r.checked_at[:19].replace('T',' ') if r.checked_at else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+
+        <div class="pagination">
+          {% if page > 1 %}<a href="?q={{ q }}&status={{ status }}&database={{ database }}&sort={{ sort }}&page={{ page - 1 }}">← ก่อนหน้า</a>{% endif %}
+          <span class="current">{{ page }} / {{ total_pages }}</span>
+          {% if page < total_pages %}<a href="?q={{ q }}&status={{ status }}&database={{ database }}&sort={{ sort }}&page={{ page + 1 }}">ถัดไป →</a>{% endif %}
+        </div>
+        {% else %}
+        <div class="empty-note" style="padding: 40px; text-align:center;">
+          ยังไม่มีผลตรวจตรงเงื่อนไขนี้ — ลองไปที่หน้า <a href="/">ภาพรวม</a> แล้วกด "สแกนทั้งหมดตอนนี้"
+        </div>
+        {% endif %}
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.getElementById('btn-scan-db')?.addEventListener('click', async () => {
+      const db = {{ database | tojson }};
+      if (!db) return;
+      const res = await fetch(`/api/scan/start?mode=database&database=${encodeURIComponent(db)}`, { method: 'POST' });
+      if (res.status === 202) {
+        location.href = '/';
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'เริ่มสแกนไม่สำเร็จ');
+      }
+    });
+  </script>
+</body>
+</html>

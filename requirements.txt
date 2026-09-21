@@ -1,0 +1,9 @@
+fastapi>=0.100,<0.130
+# starlette>=1.0 เปลี่ยนวิธีจัดการ Jinja2Templates cache จนพัง (TypeError: unhashable type: 'dict')
+# ปักไว้ที่ช่วงเดียวกับที่ทดสอบแล้วใช้งานได้จริง (0.44.0)
+starlette>=0.40,<0.46
+uvicorn[standard]>=0.23
+jinja2
+python-dotenv>=0.21
+impyla>=0.19
+thrift_sasl>=0.4.3

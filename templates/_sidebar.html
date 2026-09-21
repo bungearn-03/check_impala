@@ -1,0 +1,15 @@
+<aside class="sidebar">
+  <nav class="sidebar-nav" aria-label="เมนูหลัก">
+    <a href="/" class="{{ 'active' if active == 'home' else '' }}"><span class="icon">🏠</span><span>ภาพรวม</span></a>
+    <a href="/select" class="{{ 'active' if active == 'select' else '' }}"><span class="icon">🎯</span><span>เลือก Database/ตาราง</span></a>
+    <a href="/tables" class="{{ 'active' if active == 'tables' else '' }}"><span class="icon">🗂️</span><span>ตารางทั้งหมด</span></a>
+    <a href="/history" class="{{ 'active' if active == 'history' else '' }}"><span class="icon">🕘</span><span>ประวัติการสแกน</span></a>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="avatar">DE</span>
+    <div class="who">
+      <div class="name">Data Engineering</div>
+      <div class="role">ทีมข้อมูลองค์กร</div>
+    </div>
+  </div>
+</aside>

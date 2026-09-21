@@ -1,0 +1,142 @@
+<!-- templates/run_detail.html -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ผลการสแกน {{ run.id[:8] }} — check_impala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/shell.css" rel="stylesheet">
+  <link href="/static/dq.css" rel="stylesheet">
+  <style>
+    .breadcrumb { font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
+    .breadcrumb a { color: var(--blue-dark); text-decoration: none; font-weight: 700; }
+    .run-summary { background: var(--cream-card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px 24px; box-shadow: var(--shadow-soft); margin-bottom: 22px; }
+    .run-summary-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .scan-progress-wrap { margin: 14px 0 8px; }
+    .scan-progress { background: var(--cream); border-radius: 999px; height: 10px; overflow: hidden; }
+    .scan-progress-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--blue-dark)); transition: width .3s ease; }
+    .row-sub { font-size: 11px; color: var(--ink-soft); }
+  </style>
+</head>
+<body>
+  {% include "_header.html" %}
+  <div class="app-shell">
+    {% include "_sidebar.html" %}
+    <main class="main">
+      <div class="page-container wide">
+        <div class="breadcrumb"><a href="/history">ประวัติการสแกน</a> / {{ run.id[:8] }}</div>
+
+        <div class="run-summary">
+          <div class="run-summary-top">
+            <div>
+              <div style="font-size:16px; font-weight:800; color:var(--ink);">
+                {{ {"full":"สแกนทั้งหมด","database":"สแกนฐานข้อมูล","table":"ตรวจตารางเดียว","selection":"ตารางที่เลือกเอง"}.get(run.mode, run.mode) }}
+                {% if run.target %} — <span class="mono">{{ run.target }}</span>{% endif %}
+              </div>
+              <div class="row-sub">เริ่ม {{ run.started_at[:19].replace('T',' ') if run.started_at else '—' }}
+                {% if run.finished_at %} · เสร็จ {{ run.finished_at[:19].replace('T',' ') }}{% endif %}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="badge {{ run.status }}" id="run-status-badge">{{ run.status_label }}</span>
+              {% if run.status == 'running' %}
+              <button class="btn btn-danger" id="btn-cancel">⏹ ยกเลิก</button>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="scan-progress-wrap">
+            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:6px;">
+              <span id="run-position">{% if run.current_database %}กำลังตรวจ: {{ run.current_database }}.{{ run.current_table }}{% endif %}</span>
+              <span id="run-count">{{ run.done_tables }} / {{ run.total_tables }}</span>
+            </div>
+            <div class="scan-progress"><div class="scan-progress-fill" id="run-progress-fill"
+              style="width: {{ (run.done_tables / run.total_tables * 100) if run.total_tables else 0 }}%;"></div></div>
+          </div>
+
+          <div style="display:flex; gap:16px; margin: 14px 0 4px; font-size: 12.5px; font-weight: 700;">
+            <span>✅ <span id="cnt-ok">{{ run.ok_count }}</span></span>
+            <span>⚠️ <span id="cnt-warn">{{ run.warn_count }}</span></span>
+            <span>❌ <span id="cnt-fail">{{ run.fail_count }}</span></span>
+            <span>🛑 <span id="cnt-error">{{ run.error_count }}</span></span>
+          </div>
+
+          {% if run.log_lines %}
+          <div class="log-box" id="run-log" style="margin-top:12px;">
+            {% for line in run.log_lines %}<div class="line">{{ line }}</div>{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="filter-bar">
+          <a class="btn {{ 'btn-primary' if status == '' else 'btn-secondary' }}" href="/history/{{ run.id }}">ทั้งหมด</a>
+          <a class="btn {{ 'btn-primary' if status == 'ok' else 'btn-secondary' }}" href="/history/{{ run.id }}?status=ok">✅ ผ่าน</a>
+          <a class="btn {{ 'btn-primary' if status == 'warn' else 'btn-secondary' }}" href="/history/{{ run.id }}?status=warn">⚠️ ควรตรวจสอบ</a>
+          <a class="btn {{ 'btn-primary' if status == 'fail' else 'btn-secondary' }}" href="/history/{{ run.id }}?status=fail">❌ มีปัญหา</a>
+          <a class="btn {{ 'btn-primary' if status == 'error' else 'btn-secondary' }}" href="/history/{{ run.id }}?status=error">🛑 ตรวจไม่สำเร็จ</a>
+        </div>
+
+        {% if results %}
+        <div style="overflow-x:auto;">
+        <table class="dq-table">
+          <thead><tr><th>คะแนน</th><th>ตาราง</th><th>สถานะ</th><th>จำนวนแถว</th><th>ตรวจเมื่อ</th></tr></thead>
+          <tbody>
+            {% for r in results %}
+            <tr>
+              <td><div class="score-pill {{ r.status if r.score is not none else 'na' }}">{{ r.score if r.score is not none else '—' }}</div></td>
+              <td><a class="row-link" href="/tables/{{ r.database_name }}/{{ r.table_name }}">
+                <div class="mono" style="font-weight:700;">{{ r.table_name }}</div>
+                <div class="row-sub">{{ r.database_name }}</div>
+              </a></td>
+              <td><span class="badge {{ r.status }}">{{ {"ok":"✅ ผ่าน","warn":"⚠️ ควรตรวจสอบ","fail":"❌ มีปัญหา","error":"🛑 ตรวจไม่สำเร็จ"}.get(r.status, r.status) }}</span></td>
+              <td>{{ "{:,}".format(r.row_count) if r.row_count is not none else "—" }}</td>
+              <td>{{ r.checked_at[:19].replace('T',' ') if r.checked_at else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty-note">{{ "ยังไม่มีผลตรวจในสแกนนี้" if run.status == 'running' else "ไม่มีผลตรงเงื่อนไขนี้" }}</div>
+        {% endif %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const runId = {{ run.id | tojson }};
+    let isRunning = {{ 'true' if run.status == 'running' else 'false' }};
+
+    document.getElementById('btn-cancel')?.addEventListener('click', async () => {
+      await fetch(`/api/scan/${runId}/cancel`, { method: 'POST' });
+    });
+
+    async function poll() {
+      if (!isRunning) return;
+      try {
+        const res = await fetch(`/api/scan/${runId}/status?log_tail=40`);
+        const run = await res.json();
+        const total = run.total_tables || 0, done = run.done_tables || 0;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
+        document.getElementById('run-progress-fill').style.width = pct + '%';
+        document.getElementById('run-count').textContent = `${done} / ${total}`;
+        document.getElementById('run-position').textContent = run.current_database ? `กำลังตรวจ: ${run.current_database}.${run.current_table || ''}` : '';
+        document.getElementById('cnt-ok').textContent = run.ok_count || 0;
+        document.getElementById('cnt-warn').textContent = run.warn_count || 0;
+        document.getElementById('cnt-fail').textContent = run.fail_count || 0;
+        document.getElementById('cnt-error').textContent = run.error_count || 0;
+
+        if (run.status !== 'running') {
+          isRunning = false;
+          location.reload();
+          return;
+        }
+      } catch (e) { /* retry next tick */ }
+      setTimeout(poll, 2000);
+    }
+    poll();
+  </script>
+</body>
+</html>
